@@ -374,10 +374,8 @@ void clearOLED()
 
 void clearMoves()
 {
-    Serial.println("Clear Start");
     memset(moves, '\0', sizeof(moves));
     stepsCount = 0;
-    Serial.println( "Clear End" );
 }
 
 void addMove( int move )
