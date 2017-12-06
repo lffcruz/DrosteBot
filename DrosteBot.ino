@@ -22,8 +22,8 @@ char receivedChars[numChars];
 boolean newData = false;
 boolean waitDoneOK = false;
 
-byte rowPins[ROWS] = { KEY_PIN_0, KEY_PIN_1, KEY_PIN_2, KEY_PIN_6 };
-byte colPins[COLS] = { KEY_PIN_5, KEY_PIN_4, KEY_PIN_3 };
+byte rowPins[ROWS] = { KEY_PIN_3, KEY_PIN_4, KEY_PIN_5, KEY_PIN_6 };
+byte colPins[COLS] = { KEY_PIN_2, KEY_PIN_1, KEY_PIN_0 };
 
 Keypad customKeypad = Keypad( makeKeymap( hexaKeys ), rowPins, colPins, ROWS, COLS );
 LispMotor motor(MOT_A_1_PIN, MOT_A_2_PIN, MOT_B_1_PIN, MOT_B_2_PIN, MOT_A_PWM_PIN, MOT_B_PWM_PIN);
@@ -321,6 +321,7 @@ void checkKeypad(char customKey)
     case '*':
         // toggle mode
         currentMode = currentMode != 1;
+        if ( stepsCount ) clearMoves();
         break;
     case '+':
         if ( 0 == currentMode )
