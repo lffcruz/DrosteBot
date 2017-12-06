@@ -121,7 +121,7 @@ void setGraphs()
     strncpy( tmp, &moves[42], 14 );
     tmp[15] = '\0';
     u8g.print( tmp );
-
+    
 }
 
 // direction: 0 FW, 1 BW
@@ -374,7 +374,10 @@ void clearOLED()
 
 void clearMoves()
 {
-    moves[0] = '\0';
+    Serial.println("Clear Start");
+    memset(moves, '\0', sizeof(moves));
+    stepsCount = 0;
+    Serial.println( "Clear End" );
 }
 
 void addMove( int move )
