@@ -8,8 +8,6 @@ volatile int leftPulses;
 volatile int rightPulses;
 unsigned long timeold;
 
-byte debounceMode = 0;
-byte debounceClear = 0;
 // 0 for keypad, 1 for BT
 boolean currentMode = 0;
 // 0 for Stop, 1 for run
@@ -17,15 +15,15 @@ int runStatus = 0;
 // holds the number of commanded steps
 byte stepsCount = 0;
 // buffer for the moves
-char moves[56];
+char moves[56] = "";
 // serial data status
 const byte numChars = 60;
 char receivedChars[numChars];
 boolean newData = false;
 boolean waitDoneOK = false;
 
-byte rowPins[ROWS] = { KEY_PIN_6, KEY_PIN_5, KEY_PIN_4, KEY_PIN_3 };
-byte colPins[COLS] = { KEY_PIN_2, KEY_PIN_1, KEY_PIN_0 };
+byte rowPins[ROWS] = { KEY_PIN_0, KEY_PIN_1, KEY_PIN_2, KEY_PIN_6 };
+byte colPins[COLS] = { KEY_PIN_5, KEY_PIN_4, KEY_PIN_3 };
 
 Keypad customKeypad = Keypad( makeKeymap( hexaKeys ), rowPins, colPins, ROWS, COLS );
 LispMotor motor(MOT_A_1_PIN, MOT_A_2_PIN, MOT_B_1_PIN, MOT_B_2_PIN, MOT_A_PWM_PIN, MOT_B_PWM_PIN);
@@ -43,8 +41,6 @@ void rightCounter()
 
 void setup()
 {
-    clearMoves();
-    
     // Bluetooth speed
     Serial.begin( 9600 );
 
@@ -309,16 +305,13 @@ void checkKeypad(char customKey)
     case 0x67:
     case 0x68:
     case 0x69:
-        debounceMode = 0;
-        debounceClear = 0;
         if ( 0 == currentMode )
         {
             addMove( customKey );
         }
         break;
     case '5':
-        debounceMode = 0;
-        debounceClear = 0;
+
         if ( 0 == currentMode )
         {
             //start run
@@ -326,39 +319,23 @@ void checkKeypad(char customKey)
         }
         break;
     case '*':
-        debounceMode++;
-        debounceClear = 0;
-        if ( debounceMode > 100 )
-        {
-            // toggle mode
-            currentMode = currentMode != 1;
-            debounceMode = 0;
-        }
+        // toggle mode
+        currentMode = currentMode != 1;
         break;
     case '+':
-        debounceMode = 0;
         if ( 0 == currentMode )
         {
-            debounceClear++;
-            if ( debounceClear > 50 )
-            {
-                // clear all moves
-                clearMoves();
-                debounceClear = 0;
-            }
+            // clear all moves
+            clearMoves();
         }
         break;
     case '#':
-        debounceMode = 0;
-        debounceClear = 0;
         if ( 0 == currentMode )
         {
             deleteMove();
         }
         break;
     default:
-        debounceMode = 0;
-        debounceClear = 0;
         break;
     }
 }
@@ -397,7 +374,7 @@ void clearOLED()
 
 void clearMoves()
 {
-    memset( moves, '\0', sizeof( moves ) );
+    moves[0] = '\0';
 }
 
 void addMove( int move )
