@@ -38,7 +38,9 @@
 // How many encoder pulses until the robot advanced one full length
 #define TICKS_PER_ROBOT 20
 // How many encoder pulses until the robot rotates 90 degrees
-#define TICKS_PER_ROTATION 20
+#define TICKS_PER_ROTATION 10
+// default robot speed (0 - 255)
+#define BASE_SPEED 150
 
 // LCD maps
 #define NB_SYMBOL_MV 4

@@ -1,6 +1,5 @@
 #include "configs.h"
 #include "Keypad.h"
-#include "LispMotor.h"
 #include "U8glib.h"
 #include "string.h"
 
@@ -26,7 +25,6 @@ byte rowPins[ROWS] = { KEY_PIN_3, KEY_PIN_4, KEY_PIN_5, KEY_PIN_6 };
 byte colPins[COLS] = { KEY_PIN_2, KEY_PIN_1, KEY_PIN_0 };
 
 Keypad customKeypad = Keypad( makeKeymap( hexaKeys ), rowPins, colPins, ROWS, COLS );
-LispMotor motor(MOT_A_1_PIN, MOT_A_2_PIN, MOT_B_1_PIN, MOT_B_2_PIN, MOT_A_PWM_PIN, MOT_B_PWM_PIN);
 U8GLIB_SSD1306_128X64 u8g( U8G_I2C_OPT_NO_ACK );  // Display which does not send ACK
 
 void leftCounter()
@@ -48,11 +46,22 @@ void setup()
     pinMode( ENCODE_A_PIN, INPUT_PULLUP );
     pinMode( ENCODE_B_PIN, INPUT_PULLUP );
 
+    // Set motors' pins
+    pinMode( MOT_A_1_PIN, OUTPUT );
+    pinMode( MOT_A_2_PIN, OUTPUT );
+    pinMode( MOT_A_PWM_PIN, OUTPUT );
+
+    pinMode( MOT_B_1_PIN, OUTPUT );
+    pinMode( MOT_B_2_PIN, OUTPUT );
+    pinMode( MOT_B_PWM_PIN, OUTPUT );
+
     clearOLED();
 
     leftPulses = 0;
     rightPulses = 0;
     timeold = 0;
+
+    motors_neutral();
 }
 
 void loop()
@@ -125,18 +134,13 @@ void setGraphs()
 }
 
 // direction: 0 FW, 1 BW
-void driveStraightDistance( int masterPower, int direction )
+void driveStraightDistance( byte masterPower, int direction )
 {
-    int leftDir  = 1;
-    int rightDir = 2;
-
     //This will count up the total encoder ticks despite the fact that the encoders are constantly reset.
     int totalTicks = 0;
 
-    //Initialise slavePower as masterPower - 5 so we don't get huge error for the first few iterations. The
-    //-5 value is based off a rough guess of how much the motors are different, which prevents the robot from
-    //veering off course at the start of the function.
-    int slavePower = masterPower - 5;
+    //Initialise slavePower as masterPower.
+    byte slavePower = masterPower;
 
     int error = 0;
 
@@ -149,21 +153,22 @@ void driveStraightDistance( int masterPower, int direction )
     leftPulses = 0;
     rightPulses = 0;
 
-    if ( 1 == direction )
-    {
-        leftDir  = 2;
-        rightDir = 1;
-    }
-
     //Monitor 'totalTicks', instead of the values of the encoders which are constantly reset.
     while ( abs( totalTicks ) < TICKS_PER_ROBOT )
     {
         //    motor control stuff
         //    Direction in {1;2}
-        motor.control( leftDir, masterPower, rightDir, slavePower );
-        
+        if ( 0 == direction )
+        {
+            motors_moveFW( masterPower, slavePower );
+        }
+        else
+        {
+            motors_moveBW( masterPower, slavePower );
+        }
+                
         /* Only check encoder at a certain frequency */
-        if ( millis() - timeold >= 500 )
+        if ( millis() - timeold >= 100 )
         {
             detachInterrupt( 0 );
             detachInterrupt( 1 );
@@ -171,7 +176,17 @@ void driveStraightDistance( int masterPower, int direction )
             timeold = millis();
 
             error = leftPulses - rightPulses;
-            slavePower += error / kp;
+
+            if ( error < 0 )
+            {
+                error *= -1;
+                slavePower -= (byte)(error / kp);
+            }
+            else
+            {
+                slavePower += (byte)( error / kp);
+            }
+            
             //Add this iteration's encoder values to totalTicks.
             totalTicks += leftPulses;
 
@@ -186,20 +201,18 @@ void driveStraightDistance( int masterPower, int direction )
     }
 
     // Stop the loop once the encoders have counted up the correct number of encoder ticks.
-    motor.brake();
+    motors_neutral();
     delay( 300 );
 }
 
 // direction: 0 LT, 1 RT
-void rotate90( int masterPower, int direction )
+void rotate90( byte masterPower, byte direction )
 {
     //This will count up the total encoder ticks despite the fact that the encoders are constantly reset.
     int totalTicks = 0;
 
-    //Initialise slavePower as masterPower - 5 so we don't get huge error for the first few iterations. The
-    //-5 value is based off a rough guess of how much the motors are different, which prevents the robot from
-    //veering off course at the start of the function.
-    int slavePower = masterPower - 5;
+    //Initialise slavePower as masterPower
+    byte slavePower = masterPower;
 
     int error = 0;
 
@@ -216,11 +229,18 @@ void rotate90( int masterPower, int direction )
     while ( abs( totalTicks ) < TICKS_PER_ROTATION )
     {
         //    motor control stuff
-        //    Direction in {1;2}
-        motor.control( direction + 1 , masterPower, direction + 1, slavePower );
+        //    Direction in {0;1}
+        if ( 0 == direction )
+        {
+            motors_rotateLF( masterPower, slavePower );
+        }
+        else
+        {
+            motors_rotateRT( masterPower, slavePower );
+        }
 
         /* Only check encoder at a certain frequency */
-        if ( millis() - timeold >= 500 )
+        if ( millis() - timeold >= 100 )
         {
             detachInterrupt( 0 );
             detachInterrupt( 1 );
@@ -228,7 +248,17 @@ void rotate90( int masterPower, int direction )
             timeold = millis();
 
             error = leftPulses - rightPulses;
-            slavePower += error / kp;
+
+            if ( error < 0 )
+            {
+                error *= -1;
+                slavePower -= (byte)( error / kp );
+            }
+            else
+            {
+                slavePower += (byte)( error / kp );
+            }
+
             //Add this iteration's encoder values to totalTicks.
             totalTicks += leftPulses;
 
@@ -243,7 +273,7 @@ void rotate90( int masterPower, int direction )
     }
 
     // Stop the loop once the encoders have counted up the correct number of encoder ticks.
-    motor.brake();
+    motors_neutral();
     delay( 300 );
 }
 
@@ -270,18 +300,16 @@ void runMoves()
         switch ( moves[currentStep] )
         {
             case 0x66: // LEFT
-                rotate90( 100, 0 );
-                driveStraightDistance( 100, 0 );
+                rotate90( BASE_SPEED, 0 );
                 break;
             case 0x67: // FRONT
-                driveStraightDistance( 100, 0);
+                driveStraightDistance( BASE_SPEED, 0);
                 break;
             case 0x68: // RIGHT
-                rotate90( 100, 1 );
-                driveStraightDistance( 100, 0 );
+                rotate90( BASE_SPEED, 1 );
                 break;
             case 0x69: // BACK
-                driveStraightDistance( 100, 1 );
+                driveStraightDistance( BASE_SPEED, 1 );
                 break;
             default:
                 break;
@@ -408,23 +436,27 @@ void recvWithStartEndMarkers()
     while ( Serial.available() > 0 && newData == false ) {
         rc = Serial.read();
 
-        if ( recvInProgress == true ) {
-            if ( rc != endMarker ) {
+        if ( recvInProgress == true ) 
+        {
+            if ( rc != endMarker ) 
+            {
                 receivedChars[ndx] = rc;
                 ndx++;
-                if ( ndx >= numChars ) {
+                if ( ndx >= numChars ) 
+                {
                     ndx = numChars - 1;
                 }
             }
-            else {
+            else 
+            {
                 receivedChars[ndx] = '\0'; // terminate the string
                 recvInProgress = false;
                 ndx = 0;
                 newData = true;
             }
         }
-
-        else if ( rc == startMarker ) {
+        else if ( rc == startMarker ) 
+        {
             recvInProgress = true;
         }
     }
@@ -432,7 +464,8 @@ void recvWithStartEndMarkers()
 
 void showNewData()
 {
-    if ( newData == true ) {
+    if ( newData == true ) 
+    {
         if ( (false == waitDoneOK) && (strcmp( receivedChars, "BOT" ) == 0) )
         {
             Serial.println("BOTOK");
@@ -457,4 +490,60 @@ void showNewData()
 
         newData = false;
     }
+}
+
+/* MOTOR ROUTINES*/
+void motors_moveBW( byte speedA, byte speedB )
+{
+    digitalWrite( MOT_A_1_PIN, HIGH );
+    digitalWrite( MOT_A_2_PIN, LOW );
+    digitalWrite( MOT_B_1_PIN, HIGH );
+    digitalWrite( MOT_B_2_PIN, LOW );
+
+    analogWrite( MOT_A_PWM_PIN, speedA );
+    analogWrite( MOT_B_PWM_PIN, speedB );
+}
+
+void motors_moveFW( byte speedA, byte speedB )
+{
+    digitalWrite( MOT_A_1_PIN, LOW );
+    digitalWrite( MOT_A_2_PIN, HIGH );
+    digitalWrite( MOT_B_1_PIN, LOW );
+    digitalWrite( MOT_B_2_PIN, HIGH );
+
+    analogWrite( MOT_A_PWM_PIN, speedA );
+    analogWrite( MOT_B_PWM_PIN, speedB );
+}
+
+void motors_rotateRT( byte speedA, byte speedB )
+{
+    digitalWrite( MOT_A_1_PIN, LOW );
+    digitalWrite( MOT_A_2_PIN, HIGH );
+    digitalWrite( MOT_B_1_PIN, HIGH );
+    digitalWrite( MOT_B_2_PIN, LOW );
+
+    analogWrite( MOT_A_PWM_PIN, speedA );
+    analogWrite( MOT_B_PWM_PIN, speedB );
+}
+
+void motors_rotateLF( byte speedA, byte speedB )
+{
+    digitalWrite( MOT_A_1_PIN, HIGH );
+    digitalWrite( MOT_A_2_PIN, LOW );
+    digitalWrite( MOT_B_1_PIN, LOW );
+    digitalWrite( MOT_B_2_PIN, HIGH );
+
+    analogWrite( MOT_A_PWM_PIN, speedA );
+    analogWrite( MOT_B_PWM_PIN, speedB );
+}
+
+void motors_neutral()
+{
+    digitalWrite( MOT_A_1_PIN, LOW );
+    digitalWrite( MOT_A_2_PIN, LOW );
+    digitalWrite( MOT_B_1_PIN, LOW );
+    digitalWrite( MOT_B_2_PIN, LOW );
+
+    analogWrite( MOT_A_PWM_PIN, 0 );
+    analogWrite( MOT_B_PWM_PIN, 0 );
 }
