@@ -2,10 +2,13 @@
 #include "Keypad.h"
 #include "U8glib.h"
 #include "string.h"
+#include <EEPROM.h>
 
 volatile int leftPulses;
 volatile int rightPulses;
 unsigned long timeold;
+
+S_CONFIGS configs;
 
 // 0 for keypad, 1 for BT
 boolean currentMode = 0;
@@ -19,7 +22,6 @@ char moves[56] = "";
 const byte numChars = 60;
 char receivedChars[numChars];
 boolean newData = false;
-boolean waitDoneOK = false;
 
 byte rowPins[ROWS] = { KEY_PIN_3, KEY_PIN_4, KEY_PIN_5, KEY_PIN_6 };
 byte colPins[COLS] = { KEY_PIN_2, KEY_PIN_1, KEY_PIN_0 };
@@ -39,6 +41,22 @@ void rightCounter()
 
 void setup()
 {
+    // Are eeprom configs valid? if not, set defaults and store them
+    EEPROM.get( 0, configs );
+    
+    if ( 0 == configs.baseSpeed ||
+        0 == configs.proportinalK ||
+        0 == configs.ticksPerRobot ||
+        0 == configs.ticksPerRotation )
+    {
+        configs.ticksPerRobot = 20;
+        configs.ticksPerRotation = 25;
+        configs.baseSpeed = 150;
+        configs.proportinalK = 5;
+
+        EEPROM.put( 0, configs );
+    }
+    
     // Bluetooth speed
     Serial.begin( 9600 );
 
@@ -76,14 +94,9 @@ void loop()
     } while ( u8g.nextPage() );
 
     // Are we in bluetooth control mode?
-    if ( 1 == currentMode )
+    if ( 1 == currentMode && 
+         0 == runStatus)
     {
-        if( true == waitDoneOK )
-        {
-            Serial.println("DONE");
-            delay( 1000 );
-        }
-
         recvWithStartEndMarkers();
         showNewData();        
     }
@@ -144,7 +157,7 @@ void driveStraightDistance( byte masterPower, int direction )
 
     int error = 0;
 
-    int kp = 5;
+    int kp = configs.proportinalK;
 
     // Attach encoders' interrupts
     //Triggers on FALLING (change from HIGH to LOW)
@@ -154,7 +167,7 @@ void driveStraightDistance( byte masterPower, int direction )
     rightPulses = 0;
 
     //Monitor 'totalTicks', instead of the values of the encoders which are constantly reset.
-    while ( abs( totalTicks ) < TICKS_PER_ROBOT )
+    while ( abs( totalTicks ) < configs.ticksPerRobot )
     {
         //    motor control stuff
         //    Direction in {1;2}
@@ -216,7 +229,7 @@ void rotate90( byte masterPower, byte direction )
 
     int error = 0;
 
-    int kp = 5;
+    int kp = configs.proportinalK;
 
     // Attach encoders' interrupts
     //Triggers on FALLING (change from HIGH to LOW)
@@ -226,7 +239,7 @@ void rotate90( byte masterPower, byte direction )
     rightPulses = 0;
 
     //Monitor 'totalTicks', instead of the values of the encoders which are constantly reset.
-    while ( abs( totalTicks ) < TICKS_PER_ROTATION )
+    while ( abs( totalTicks ) < configs.ticksPerRotation )
     {
         //    motor control stuff
         //    Direction in {0;1}
@@ -282,10 +295,6 @@ void runMoves()
     int currentStep = 0;
     // Toggle image as PLAY and update it
     runStatus = 1;
-    if ( 1 == currentMode )
-    {
-        Serial.println( "GO" );
-    }
 
     u8g.firstPage();
     do {
@@ -300,16 +309,16 @@ void runMoves()
         switch ( moves[currentStep] )
         {
             case 0x66: // LEFT
-                rotate90( BASE_SPEED, 0 );
+                rotate90( configs.baseSpeed, 0 );
                 break;
             case 0x67: // FRONT
-                driveStraightDistance( BASE_SPEED, 0);
+                driveStraightDistance( configs.baseSpeed, 0);
                 break;
             case 0x68: // RIGHT
-                rotate90( BASE_SPEED, 1 );
+                rotate90( configs.baseSpeed, 1 );
                 break;
             case 0x69: // BACK
-                driveStraightDistance( BASE_SPEED, 1 );
+                driveStraightDistance( configs.baseSpeed, 1 );
                 break;
             default:
                 break;
@@ -318,11 +327,11 @@ void runMoves()
 
     //toggle image as STOP
     runStatus = 0;
-    if ( 1 == currentMode )
-    {
-        waitDoneOK = true;
-        Serial.println( "DONE" );
-    }
+
+    if ( 1 == currentMode ) clearMoves();
+
+    Serial.println( "DONE" );
+    Serial.flush();
 }
 
 void checkKeypad(char customKey)
@@ -387,6 +396,8 @@ void checkBTData( char customKey )
         break;
     case '5':
         //start run
+        Serial.println( "GO" );
+        Serial.flush();
         runMoves();
         break;
     default:
@@ -466,15 +477,21 @@ void showNewData()
 {
     if ( newData == true ) 
     {
-        if ( (false == waitDoneOK) && (strcmp( receivedChars, "BOT" ) == 0) )
+        if ( 0 == strcmp( receivedChars, "BOT" ) )
         {
             Serial.println("BOTOK");
+            Serial.flush();
         }
-        else if ( ( true == waitDoneOK ) && (strcmp( receivedChars, "DONEOK" ) == 0) )
+        else if ( 0 == strncmp( receivedChars, "CFG", 3 ) )
         {
-            waitDoneOK = false;
+            memcpy(&configs, &receivedChars[3], sizeof(S_CONFIGS));
+            setConfig();
         }
-        else if ( true == waitDoneOK )
+        else if ( 0 == strcmp( receivedChars, "GETCFG" ) )
+        {
+            transmitConfig();
+        }
+        else
         {
             int counter = 0;
             int length = strlen( receivedChars );
@@ -484,8 +501,12 @@ void showNewData()
             {
                 checkBTData( receivedChars[counter] );
             }
-            // Append run command
-            checkBTData( '5' );
+
+            if ( strlen( moves ) > 0 )
+            {
+                // Append run command
+                checkBTData( '5' );
+            }
         }
 
         newData = false;
@@ -546,4 +567,17 @@ void motors_neutral()
 
     analogWrite( MOT_A_PWM_PIN, 0 );
     analogWrite( MOT_B_PWM_PIN, 0 );
+}
+
+void setConfig()
+{
+    EEPROM.put( 0, configs );
+
+    Serial.println( "CFGOK" );
+    Serial.flush();
+}
+
+void transmitConfig()
+{
+    Serial.write( (uint8_t*)&configs, sizeof( configs ) );
 }
