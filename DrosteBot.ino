@@ -8,7 +8,7 @@ volatile int leftPulses;
 volatile int rightPulses;
 unsigned long timeold;
 
-S_CONFIGS configs;
+volatile S_CONFIGS configs;
 
 // 0 for keypad, 1 for BT
 boolean currentMode = 0;
@@ -21,6 +21,8 @@ char moves[56] = "";
 // serial data status
 const byte numChars = 60;
 char receivedChars[numChars];
+char buffer[numChars];
+int cfgs[4];
 boolean newData = false;
 
 byte rowPins[ROWS] = { KEY_PIN_3, KEY_PIN_4, KEY_PIN_5, KEY_PIN_6 };
@@ -55,6 +57,7 @@ void setup()
         configs.proportinalK = 5;
 
         EEPROM.put( 0, configs );
+        EEPROM.get( 0, configs );
     }
     
     // Bluetooth speed
@@ -147,13 +150,13 @@ void setGraphs()
 }
 
 // direction: 0 FW, 1 BW
-void driveStraightDistance( byte masterPower, int direction )
+void driveStraightDistance( int masterPower, int direction )
 {
     //This will count up the total encoder ticks despite the fact that the encoders are constantly reset.
     int totalTicks = 0;
 
     //Initialise slavePower as masterPower.
-    byte slavePower = masterPower;
+    int slavePower = masterPower;
 
     int error = 0;
 
@@ -193,11 +196,11 @@ void driveStraightDistance( byte masterPower, int direction )
             if ( error < 0 )
             {
                 error *= -1;
-                slavePower -= (byte)(error / kp);
+                slavePower -= (int)(error / kp);
             }
             else
             {
-                slavePower += (byte)( error / kp);
+                slavePower += (int)( error / kp);
             }
             
             //Add this iteration's encoder values to totalTicks.
@@ -219,13 +222,13 @@ void driveStraightDistance( byte masterPower, int direction )
 }
 
 // direction: 0 LT, 1 RT
-void rotate90( byte masterPower, byte direction )
+void rotate90( int masterPower, int direction )
 {
     //This will count up the total encoder ticks despite the fact that the encoders are constantly reset.
     int totalTicks = 0;
 
     //Initialise slavePower as masterPower
-    byte slavePower = masterPower;
+    int slavePower = masterPower;
 
     int error = 0;
 
@@ -265,11 +268,11 @@ void rotate90( byte masterPower, byte direction )
             if ( error < 0 )
             {
                 error *= -1;
-                slavePower -= (byte)( error / kp );
+                slavePower -= (int)( error / kp );
             }
             else
             {
-                slavePower += (byte)( error / kp );
+                slavePower += (int)( error / kp );
             }
 
             //Add this iteration's encoder values to totalTicks.
@@ -484,8 +487,8 @@ void showNewData()
         }
         else if ( 0 == strncmp( receivedChars, "CFG", 3 ) )
         {
-            memcpy(&configs, &receivedChars[3], sizeof(S_CONFIGS));
-            setConfig();
+            strncpy( buffer, receivedChars, numChars );
+            setConfig(&buffer[3]);
         }
         else if ( 0 == strcmp( receivedChars, "GETCFG" ) )
         {
@@ -514,7 +517,7 @@ void showNewData()
 }
 
 /* MOTOR ROUTINES*/
-void motors_moveBW( byte speedA, byte speedB )
+void motors_moveBW( int speedA, int speedB )
 {
     digitalWrite( MOT_A_1_PIN, HIGH );
     digitalWrite( MOT_A_2_PIN, LOW );
@@ -525,7 +528,7 @@ void motors_moveBW( byte speedA, byte speedB )
     analogWrite( MOT_B_PWM_PIN, speedB );
 }
 
-void motors_moveFW( byte speedA, byte speedB )
+void motors_moveFW( int speedA, int speedB )
 {
     digitalWrite( MOT_A_1_PIN, LOW );
     digitalWrite( MOT_A_2_PIN, HIGH );
@@ -536,7 +539,7 @@ void motors_moveFW( byte speedA, byte speedB )
     analogWrite( MOT_B_PWM_PIN, speedB );
 }
 
-void motors_rotateRT( byte speedA, byte speedB )
+void motors_rotateRT( int speedA, int speedB )
 {
     digitalWrite( MOT_A_1_PIN, LOW );
     digitalWrite( MOT_A_2_PIN, HIGH );
@@ -547,7 +550,7 @@ void motors_rotateRT( byte speedA, byte speedB )
     analogWrite( MOT_B_PWM_PIN, speedB );
 }
 
-void motors_rotateLF( byte speedA, byte speedB )
+void motors_rotateLF( int speedA, int speedB )
 {
     digitalWrite( MOT_A_1_PIN, HIGH );
     digitalWrite( MOT_A_2_PIN, LOW );
@@ -569,9 +572,27 @@ void motors_neutral()
     analogWrite( MOT_B_PWM_PIN, 0 );
 }
 
-void setConfig()
+void setConfig(char* buff)
 {
+
+    int counter = 0;
+    
+    char *tok = strtok( buff, ":" );
+
+    while ( tok ) 
+    {
+        cfgs[counter] = atoi(tok);
+        if ( counter < 4 ) counter++;
+        tok = strtok( NULL, ":" );
+    }
+    
+    configs.ticksPerRobot = cfgs[0];
+    configs.ticksPerRotation = cfgs[1];
+    configs.baseSpeed = cfgs[2];
+    configs.proportinalK = cfgs[3];
+
     EEPROM.put( 0, configs );
+    EEPROM.get( 0, configs );
 
     Serial.println( "CFGOK" );
     Serial.flush();
@@ -579,5 +600,12 @@ void setConfig()
 
 void transmitConfig()
 {
-    Serial.write( (uint8_t*)&configs, sizeof( configs ) );
+    Serial.print("CFG");
+    Serial.print( configs.ticksPerRobot );
+    Serial.print( ":" );
+    Serial.print( configs.ticksPerRotation );
+    Serial.print( ":" );
+    Serial.print( configs.baseSpeed );
+    Serial.print( ":" );
+    Serial.println( configs.proportinalK );
 }

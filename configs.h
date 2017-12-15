@@ -81,8 +81,8 @@ typedef struct  __attribute__( ( packed ) )
 {
     int ticksPerRobot;
     int ticksPerRotation;
-    byte baseSpeed;
-    byte proportinalK;
+    int baseSpeed;
+    int proportinalK;
 }S_CONFIGS;
 
 #endif /* __CONFIGS_H__ */
