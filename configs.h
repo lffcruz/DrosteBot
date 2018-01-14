@@ -14,9 +14,6 @@
 #define MOT_B_2_PIN 8
 #define MOT_B_PWM_PIN 9
 
-#define ENCODE_A_PIN 3
-#define ENCODE_B_PIN 2
-
 #define LCD_SDA_PIN 18
 #define LCD_SCL_PIN 19
 

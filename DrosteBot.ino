@@ -4,13 +4,6 @@
 #include "string.h"
 #include <EEPROM.h>
 
-volatile unsigned long leftPulses;
-volatile unsigned long rightPulses;
-volatile int masterPower;
-volatile int slavePower;
-
-unsigned long timeold;
-
 volatile S_CONFIGS configs;
 
 // 0 for keypad, 1 for BT
@@ -25,7 +18,6 @@ char moves[56] = "";
 const byte numChars = 60;
 char receivedChars[numChars];
 char buffer[numChars];
-int cfgs[4];
 boolean newData = false;
 
 byte rowPins[ROWS] = { KEY_PIN_3, KEY_PIN_4, KEY_PIN_5, KEY_PIN_6 };
@@ -33,16 +25,6 @@ byte colPins[COLS] = { KEY_PIN_2, KEY_PIN_1, KEY_PIN_0 };
 
 Keypad customKeypad = Keypad( makeKeymap( hexaKeys ), rowPins, colPins, ROWS, COLS );
 U8GLIB_SSD1306_128X64 u8g( U8G_I2C_OPT_NO_ACK );  // Display which does not send ACK
-
-void leftCounter()
-{
-    leftPulses++;
-}
-
-void rightCounter()
-{
-    rightPulses++;
-}
 
 void setup()
 {
@@ -60,10 +42,6 @@ void setup()
     // Bluetooth speed
     Serial.begin( 9600 );
 
-    // Set encoders' pins
-    pinMode( ENCODE_A_PIN, INPUT_PULLUP );
-    pinMode( ENCODE_B_PIN, INPUT_PULLUP );
-
     // Set motors' pins
     pinMode( MOT_A_1_PIN, OUTPUT );
     pinMode( MOT_A_2_PIN, OUTPUT );
@@ -74,16 +52,6 @@ void setup()
     pinMode( MOT_B_PWM_PIN, OUTPUT );
 
     clearOLED();
-
-    leftPulses = 0;
-    rightPulses = 0;
-    slavePower = 0;
-    masterPower = 0;
-    timeold = 0;
-
-    setMasterPower( ROBOT_SPEED );
-
-    motors_neutral();
 }
 
 void loop()
@@ -150,25 +118,11 @@ void setGraphs()
     
 }
 
-void setMasterPower( int _masterPower )
-{
-    masterPower = _masterPower;
-    slavePower = masterPower - 10;
-}
-
 // direction: 0 FW, 1 BW
 void driveStraightDistance( int direction)
 {
     //This will count up the total encoder ticks despite the fact that the encoders are constantly reset.
     int totalTicks = 0;
-    int error = 0;
-    int startTicks = leftPulses;
-    int kp = 5;
-
-    // Attach encoders' interrupts
-    //Triggers on FALLING (change from HIGH to LOW)
-    attachInterrupt( digitalPinToInterrupt( ENCODE_A_PIN ), leftCounter, FALLING );
-    attachInterrupt( digitalPinToInterrupt( ENCODE_B_PIN ), rightCounter, FALLING );
     
     while ( totalTicks < configs.ticksPerRobot )
     {
@@ -176,57 +130,14 @@ void driveStraightDistance( int direction)
         //    Direction in {1;2}
         if ( 0 == direction )
         {
-            motors_moveFW( masterPower, slavePower );
+           // motors_moveFW(  );
         }
         else
         {
-            motors_moveBW( masterPower, slavePower );
+           // motors_moveBW(  );
         }
-                
-        totalTicks = leftPulses - startTicks;
 
-        /* Only check encoder at a certain frequency */
-        //if ( millis() - timeold >= 10 )
-        {
-            noInterrupts();
-            if ( leftPulses > rightPulses )
-            {
-                // more speed needed on the right side
-                slavePower += kp;
-                masterPower -= kp;
-            }
-            else if ( leftPulses < rightPulses )
-            {
-                // more speed needed on left side
-                slavePower -= kp;
-                masterPower += kp;
-            }
-            interrupts();
-
-            if ( slavePower > 255 )
-            {
-                slavePower = 255;
-            }
-            else if ( slavePower < 80 )
-            {
-                slavePower = 80;
-            }
-
-            if ( masterPower > 255 )
-            {
-                masterPower = 255;
-            }
-            else if ( masterPower < 80 )
-            {
-                masterPower = 80;
-            }
-
-            //timeold = millis();
-        }
     }
-
-    // Stop the loop once the encoders have counted up the correct number of encoder ticks.
-    motors_neutral();
 }
 
 // direction: 0 LT, 1 RT
@@ -235,17 +146,6 @@ void rotate90( int direction )
     //This will count up the total encoder ticks despite the fact that the encoders are constantly reset.
     int totalTicks = 0;
 
-    int error = 0;
-
-    int kp = 5;
-
-    // Attach encoders' interrupts
-    //Triggers on FALLING (change from HIGH to LOW)
-    attachInterrupt( digitalPinToInterrupt( ENCODE_A_PIN ), leftCounter, FALLING );
-    attachInterrupt( digitalPinToInterrupt( ENCODE_B_PIN ), rightCounter, FALLING );
-    leftPulses = 0;
-    rightPulses = 0;
-
     //Monitor 'totalTicks', instead of the values of the encoders which are constantly reset.
     while ( abs( totalTicks ) < STEPS_ROT )
     {
@@ -253,38 +153,13 @@ void rotate90( int direction )
         //    Direction in {0;1}
         if ( 0 == direction )
         {
-            motors_rotateLF( masterPower, slavePower );
+           // motors_rotateLF( masterPower, slavePower );
         }
         else
         {
-            motors_rotateRT( masterPower, slavePower );
-        }
-
-        /* Only check encoder at a certain frequency */
-        if ( millis() - timeold >= 40 )
-        {
-            detachInterrupt( 0 );
-            detachInterrupt( 1 );
-            
-            error = leftPulses - rightPulses;
-
-            slavePower = ( masterPower + ( error * kp ) );
-            
-            //Add this iteration's encoder values to totalTicks.
-            totalTicks += leftPulses;
-
-            leftPulses = 0;
-            rightPulses = 0;
-
-            attachInterrupt( digitalPinToInterrupt( ENCODE_A_PIN ), leftCounter, FALLING );
-            attachInterrupt( digitalPinToInterrupt( ENCODE_B_PIN ), rightCounter, FALLING );
-
-            timeold = millis();
+           // motors_rotateRT( masterPower, slavePower );
         }
     }
-
-    // Stop the loop once the encoders have counted up the correct number of encoder ticks.
-    motors_neutral();
 }
 
 void runMoves()
