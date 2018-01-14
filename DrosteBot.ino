@@ -4,8 +4,11 @@
 #include "string.h"
 #include <EEPROM.h>
 
-volatile int leftPulses;
-volatile int rightPulses;
+volatile unsigned long leftPulses;
+volatile unsigned long rightPulses;
+volatile int masterPower;
+volatile int slavePower;
+
 unsigned long timeold;
 
 volatile S_CONFIGS configs;
@@ -46,15 +49,9 @@ void setup()
     // Are eeprom configs valid? if not, set defaults and store them
     EEPROM.get( 0, configs );
     
-    if ( 0 == configs.baseSpeed ||
-        0 == configs.proportinalK ||
-        0 == configs.ticksPerRobot ||
-        0 == configs.ticksPerRotation )
+    if ( 0 == configs.ticksPerRobot )
     {
         configs.ticksPerRobot = 20;
-        configs.ticksPerRotation = 25;
-        configs.baseSpeed = 150;
-        configs.proportinalK = 5;
 
         EEPROM.put( 0, configs );
         EEPROM.get( 0, configs );
@@ -80,7 +77,11 @@ void setup()
 
     leftPulses = 0;
     rightPulses = 0;
+    slavePower = 0;
+    masterPower = 0;
     timeold = 0;
+
+    setMasterPower( ROBOT_SPEED );
 
     motors_neutral();
 }
@@ -149,28 +150,27 @@ void setGraphs()
     
 }
 
+void setMasterPower( int _masterPower )
+{
+    masterPower = _masterPower;
+    slavePower = masterPower - 10;
+}
+
 // direction: 0 FW, 1 BW
-void driveStraightDistance( int masterPower, int direction )
+void driveStraightDistance( int direction)
 {
     //This will count up the total encoder ticks despite the fact that the encoders are constantly reset.
     int totalTicks = 0;
-
-    //Initialise slavePower as masterPower.
-    int slavePower = masterPower;
-
     int error = 0;
-
-    int kp = configs.proportinalK;
+    int startTicks = leftPulses;
+    int kp = 5;
 
     // Attach encoders' interrupts
     //Triggers on FALLING (change from HIGH to LOW)
     attachInterrupt( digitalPinToInterrupt( ENCODE_A_PIN ), leftCounter, FALLING );
     attachInterrupt( digitalPinToInterrupt( ENCODE_B_PIN ), rightCounter, FALLING );
-    leftPulses = 0;
-    rightPulses = 0;
-
-    //Monitor 'totalTicks', instead of the values of the encoders which are constantly reset.
-    while ( abs( totalTicks ) < configs.ticksPerRobot )
+    
+    while ( totalTicks < configs.ticksPerRobot )
     {
         //    motor control stuff
         //    Direction in {1;2}
@@ -183,56 +183,61 @@ void driveStraightDistance( int masterPower, int direction )
             motors_moveBW( masterPower, slavePower );
         }
                 
+        totalTicks = leftPulses - startTicks;
+
         /* Only check encoder at a certain frequency */
-        if ( millis() - timeold >= 100 )
+        //if ( millis() - timeold >= 10 )
         {
-            detachInterrupt( 0 );
-            detachInterrupt( 1 );
-
-            timeold = millis();
-
-            error = leftPulses - rightPulses;
-
-            if ( error < 0 )
+            noInterrupts();
+            if ( leftPulses > rightPulses )
             {
-                error *= -1;
-                slavePower -= (int)(error / kp);
+                // more speed needed on the right side
+                slavePower += kp;
+                masterPower -= kp;
             }
-            else
+            else if ( leftPulses < rightPulses )
             {
-                slavePower += (int)( error / kp);
+                // more speed needed on left side
+                slavePower -= kp;
+                masterPower += kp;
             }
-            
-            //Add this iteration's encoder values to totalTicks.
-            totalTicks += leftPulses;
+            interrupts();
 
-            leftPulses = 0;
-            rightPulses = 0;
+            if ( slavePower > 255 )
+            {
+                slavePower = 255;
+            }
+            else if ( slavePower < 80 )
+            {
+                slavePower = 80;
+            }
 
-            attachInterrupt( digitalPinToInterrupt( ENCODE_A_PIN ), leftCounter, FALLING );
-            attachInterrupt( digitalPinToInterrupt( ENCODE_B_PIN ), rightCounter, FALLING );
+            if ( masterPower > 255 )
+            {
+                masterPower = 255;
+            }
+            else if ( masterPower < 80 )
+            {
+                masterPower = 80;
+            }
+
+            //timeold = millis();
         }
-
-        delay(100);
     }
 
     // Stop the loop once the encoders have counted up the correct number of encoder ticks.
     motors_neutral();
-    delay( 300 );
 }
 
 // direction: 0 LT, 1 RT
-void rotate90( int masterPower, int direction )
+void rotate90( int direction )
 {
     //This will count up the total encoder ticks despite the fact that the encoders are constantly reset.
     int totalTicks = 0;
 
-    //Initialise slavePower as masterPower
-    int slavePower = masterPower;
-
     int error = 0;
 
-    int kp = configs.proportinalK;
+    int kp = 5;
 
     // Attach encoders' interrupts
     //Triggers on FALLING (change from HIGH to LOW)
@@ -242,7 +247,7 @@ void rotate90( int masterPower, int direction )
     rightPulses = 0;
 
     //Monitor 'totalTicks', instead of the values of the encoders which are constantly reset.
-    while ( abs( totalTicks ) < configs.ticksPerRotation )
+    while ( abs( totalTicks ) < STEPS_ROT )
     {
         //    motor control stuff
         //    Direction in {0;1}
@@ -256,25 +261,15 @@ void rotate90( int masterPower, int direction )
         }
 
         /* Only check encoder at a certain frequency */
-        if ( millis() - timeold >= 100 )
+        if ( millis() - timeold >= 40 )
         {
             detachInterrupt( 0 );
             detachInterrupt( 1 );
-
-            timeold = millis();
-
+            
             error = leftPulses - rightPulses;
 
-            if ( error < 0 )
-            {
-                error *= -1;
-                slavePower -= (int)( error / kp );
-            }
-            else
-            {
-                slavePower += (int)( error / kp );
-            }
-
+            slavePower = ( masterPower + ( error * kp ) );
+            
             //Add this iteration's encoder values to totalTicks.
             totalTicks += leftPulses;
 
@@ -283,14 +278,13 @@ void rotate90( int masterPower, int direction )
 
             attachInterrupt( digitalPinToInterrupt( ENCODE_A_PIN ), leftCounter, FALLING );
             attachInterrupt( digitalPinToInterrupt( ENCODE_B_PIN ), rightCounter, FALLING );
-        }
 
-        delay( 100 );
+            timeold = millis();
+        }
     }
 
     // Stop the loop once the encoders have counted up the correct number of encoder ticks.
     motors_neutral();
-    delay( 300 );
 }
 
 void runMoves()
@@ -312,16 +306,16 @@ void runMoves()
         switch ( moves[currentStep] )
         {
             case 0x66: // LEFT
-                rotate90( configs.baseSpeed, 0 );
+                rotate90( 0 );
                 break;
             case 0x67: // FRONT
-                driveStraightDistance( configs.baseSpeed, 0);
+                driveStraightDistance( 0);
                 break;
             case 0x68: // RIGHT
-                rotate90( configs.baseSpeed, 1 );
+                rotate90( 1 );
                 break;
             case 0x69: // BACK
-                driveStraightDistance( configs.baseSpeed, 1 );
+                driveStraightDistance( 1 );
                 break;
             default:
                 break;
@@ -568,33 +562,18 @@ void motors_neutral()
     digitalWrite( MOT_B_1_PIN, LOW );
     digitalWrite( MOT_B_2_PIN, LOW );
 
-    analogWrite( MOT_A_PWM_PIN, 0 );
-    analogWrite( MOT_B_PWM_PIN, 0 );
+    digitalWrite( MOT_A_PWM_PIN, HIGH );
+    digitalWrite( MOT_B_PWM_PIN, HIGH );
 }
 
 void setConfig(char* buff)
 {
-
-    int counter = 0;
-    
-    char *tok = strtok( buff, ":" );
-
-    while ( tok ) 
-    {
-        cfgs[counter] = atoi(tok);
-        if ( counter < 4 ) counter++;
-        tok = strtok( NULL, ":" );
-    }
-    
-    configs.ticksPerRobot = cfgs[0];
-    configs.ticksPerRotation = cfgs[1];
-    configs.baseSpeed = cfgs[2];
-    configs.proportinalK = cfgs[3];
+    configs.ticksPerRobot = atoi( buff );
 
     EEPROM.put( 0, configs );
     EEPROM.get( 0, configs );
 
-    Serial.println( "CFGOK" );
+    Serial.println( "OKCFG" );
     Serial.flush();
 }
 
@@ -602,10 +581,4 @@ void transmitConfig()
 {
     Serial.print("CFG");
     Serial.print( configs.ticksPerRobot );
-    Serial.print( ":" );
-    Serial.print( configs.ticksPerRotation );
-    Serial.print( ":" );
-    Serial.print( configs.baseSpeed );
-    Serial.print( ":" );
-    Serial.println( configs.proportinalK );
 }
