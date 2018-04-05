@@ -1,311 +1,54 @@
 #include "configs.h"
-#include "Keypad.h"
-#include "U8glib.h"
 #include "string.h"
-#include <EEPROM.h>
+#include <SoftwareSerial.h>
+#include <Servo.h>
 
-volatile S_CONFIGS configs;
+typedef struct cmdPair
+{
+    char command;
+    int value;
+};
 
-// 0 for keypad, 1 for BT
-boolean currentMode = 0;
-// 0 for Stop, 1 for run
-int runStatus = 0;
+Servo myservo;
+
 // holds the number of commanded steps
 byte stepsCount = 0;
+
 // buffer for the moves
-char moves[56] = "";
+cmdPair moves[56];
+
 // serial data status
-const byte numChars = 60;
+const byte numChars = 350;
 char receivedChars[numChars];
-char buffer[numChars];
 boolean newData = false;
 
-byte rowPins[ROWS] = { KEY_PIN_3, KEY_PIN_4, KEY_PIN_5, KEY_PIN_6 };
-byte colPins[COLS] = { KEY_PIN_2, KEY_PIN_1, KEY_PIN_0 };
-
-Keypad customKeypad = Keypad( makeKeymap( hexaKeys ), rowPins, colPins, ROWS, COLS );
-U8GLIB_SSD1306_128X64 u8g( U8G_I2C_OPT_NO_ACK );  // Display which does not send ACK
+SoftwareSerial blueSerial( BT_RX_PIN, BT_TX_PIN );
 
 void setup()
-{
-    // Are eeprom configs valid? if not, set defaults and store them
-    EEPROM.get( 0, configs );
-    
-    if ( 0 == configs.ticksPerRobot )
-    {
-        configs.ticksPerRobot = 20;
-
-        EEPROM.put( 0, configs );
-        EEPROM.get( 0, configs );
-    }
-    
+{    
     // Bluetooth speed
-    Serial.begin( 9600 );
+    blueSerial.begin( 38400 );
 
     // Set motors' pins
     pinMode( MOT_A_1_PIN, OUTPUT );
-    pinMode( MOT_A_2_PIN, OUTPUT );
     pinMode( MOT_A_PWM_PIN, OUTPUT );
 
     pinMode( MOT_B_1_PIN, OUTPUT );
-    pinMode( MOT_B_2_PIN, OUTPUT );
     pinMode( MOT_B_PWM_PIN, OUTPUT );
 
-    clearOLED();
+    myservo.attach( SRV_PIN );
+
+    memset(moves, 0, sizeof(moves));
 }
 
 void loop()
 {
-    // Keypad stuff
-    checkKeypad( customKeypad.getKey() );
-    
-    // LCD stuff
-    u8g.firstPage();
-    do {
-        setGraphs();
-    } while ( u8g.nextPage() );
-
-    // Are we in bluetooth control mode?
-    if ( 1 == currentMode && 
-         0 == runStatus)
-    {
-        recvWithStartEndMarkers();
-        showNewData();        
-    }
-}
-
-void setGraphs()
-{
-    char tmp[15];
-    
-    // Clear the box
-    u8g.setColorIndex( 0 );
-    u8g.drawBox( 0, 0, 128, 64 );
-    u8g.setColorIndex( 1 );
-
-    // Top LCD section
-    u8g.setFont( u8g_font_9x15B );
-    u8g.setPrintPos( 0, 10 );
-    u8g.print( "Mode " );
-    
-    u8g.setFont( u8g_font_9x15_78_79 );
-    u8g.print( modeSymbols[currentMode] );
-
-    u8g.setPrintPos( 110, 10 );
-    u8g.setFont( u8g_font_9x15_67_75 );
-    u8g.print( moveSymbols[NB_SYMBOL_MV + runStatus] );
-
-    // draw arrays
-    u8g.setPrintPos( 2, 28 );
-    strncpy( tmp, &moves[0], 14 );
-    tmp[15] = '\0';
-    u8g.print( tmp );
-  
-    u8g.setPrintPos( 2, 40 );
-    strncpy( tmp, &moves[14], 14 );
-    tmp[15] = '\0';
-    u8g.print( tmp );
-
-    u8g.setPrintPos( 2, 52 );
-    strncpy( tmp, &moves[28], 14 );
-    tmp[15] = '\0';
-    u8g.print( tmp );
-
-    u8g.setPrintPos( 2, 64 );
-    strncpy( tmp, &moves[42], 14 );
-    tmp[15] = '\0';
-    u8g.print( tmp );
-    
-}
-
-// direction: 0 FW, 1 BW
-void driveStraightDistance( int direction)
-{
-    //This will count up the total encoder ticks despite the fact that the encoders are constantly reset.
-    int totalTicks = 0;
-    
-    while ( totalTicks < configs.ticksPerRobot )
-    {
-        //    motor control stuff
-        //    Direction in {1;2}
-        if ( 0 == direction )
-        {
-           // motors_moveFW(  );
-        }
-        else
-        {
-           // motors_moveBW(  );
-        }
-
-    }
-}
-
-// direction: 0 LT, 1 RT
-void rotate90( int direction )
-{
-    //This will count up the total encoder ticks despite the fact that the encoders are constantly reset.
-    int totalTicks = 0;
-
-    //Monitor 'totalTicks', instead of the values of the encoders which are constantly reset.
-    while ( abs( totalTicks ) < STEPS_ROT )
-    {
-        //    motor control stuff
-        //    Direction in {0;1}
-        if ( 0 == direction )
-        {
-           // motors_rotateLF( masterPower, slavePower );
-        }
-        else
-        {
-           // motors_rotateRT( masterPower, slavePower );
-        }
-    }
-}
-
-void runMoves()
-{
-    int currentStep = 0;
-    // Toggle image as PLAY and update it
-    runStatus = 1;
-
-    u8g.firstPage();
-    do {
-        setGraphs();
-    } while ( u8g.nextPage() );
-
-    delay( 1000 );
-
-    /* MOTOR CONTROL*/
-    for ( currentStep = 0; currentStep < stepsCount; currentStep++ )
-    {
-        switch ( moves[currentStep] )
-        {
-            case 0x66: // LEFT
-                rotate90( 0 );
-                break;
-            case 0x67: // FRONT
-                driveStraightDistance( 0);
-                break;
-            case 0x68: // RIGHT
-                rotate90( 1 );
-                break;
-            case 0x69: // BACK
-                driveStraightDistance( 1 );
-                break;
-            default:
-                break;
-        }                
-    }
-
-    //toggle image as STOP
-    runStatus = 0;
-
-    if ( 1 == currentMode ) clearMoves();
-
-    Serial.println( "DONE" );
-    Serial.flush();
-}
-
-void checkKeypad(char customKey)
-{
-    switch ( customKey )
-    {
-    case 0x66:
-    case 0x67:
-    case 0x68:
-    case 0x69:
-        if ( 0 == currentMode )
-        {
-            addMove( customKey );
-        }
-        break;
-    case '5':
-
-        if ( 0 == currentMode )
-        {
-            //start run
-            runMoves();
-        }
-        break;
-    case '*':
-        // toggle mode
-        currentMode = currentMode != 1;
-        if ( stepsCount ) clearMoves();
-        break;
-    case '+':
-        if ( 0 == currentMode )
-        {
-            // clear all moves
-            clearMoves();
-        }
-        break;
-    case '#':
-        if ( 0 == currentMode )
-        {
-            deleteMove();
-        }
-        break;
-    default:
-        break;
-    }
-}
-
-void checkBTData( char customKey )
-{
-    switch ( customKey )
-    {
-    case 'F':
-        addMove( 0x67 );
-        break;
-    case 'B':
-        addMove( 0x69 );
-        break;
-    case 'L':
-        addMove( 0x66 );
-        break;
-    case 'R':
-        addMove( 0x68 );
-        break;
-    case '5':
-        //start run
-        Serial.println( "GO" );
-        Serial.flush();
-        runMoves();
-        break;
-    default:
-        break;
-    }
-}
-
-void clearOLED()
-{
-    u8g.firstPage();
-    do {
-    } while ( u8g.nextPage() );
-}
-
-void clearMoves()
-{
-    memset(moves, '\0', sizeof(moves));
-    stepsCount = 0;
-}
-
-void addMove( int move )
-{
-    if ( stepsCount < 56 )
-    {
-        moves[stepsCount] = move;
-        stepsCount++;
-    }
-}
-
-void deleteMove()
-{
-    if ( stepsCount > 0 )
-    {
-        stepsCount--;
-        moves[stepsCount] = '\0';        
-    }
+    // check UART and get data if available
+    recvWithStartEndMarkers();
+    // process the received data
+    showNewData();
+    // give it some rest
+    delay( 100 );
 }
 
 void recvWithStartEndMarkers()
@@ -316,21 +59,21 @@ void recvWithStartEndMarkers()
     char endMarker = '>';
     char rc;
 
-    while ( Serial.available() > 0 && newData == false ) {
-        rc = Serial.read();
+    while ( blueSerial.available() > 0 && newData == false ) {
+        rc = blueSerial.read();
 
-        if ( recvInProgress == true ) 
+        if ( recvInProgress == true )
         {
-            if ( rc != endMarker ) 
+            if ( rc != endMarker )
             {
                 receivedChars[ndx] = rc;
                 ndx++;
-                if ( ndx >= numChars ) 
+                if ( ndx >= numChars )
                 {
                     ndx = numChars - 1;
                 }
             }
-            else 
+            else
             {
                 receivedChars[ndx] = '\0'; // terminate the string
                 recvInProgress = false;
@@ -338,7 +81,7 @@ void recvWithStartEndMarkers()
                 newData = true;
             }
         }
-        else if ( rc == startMarker ) 
+        else if ( rc == startMarker )
         {
             recvInProgress = true;
         }
@@ -347,37 +90,49 @@ void recvWithStartEndMarkers()
 
 void showNewData()
 {
-    if ( newData == true ) 
+    if ( newData == true )
     {
         if ( 0 == strcmp( receivedChars, "BOT" ) )
         {
-            Serial.println("BOTOK");
-            Serial.flush();
-        }
-        else if ( 0 == strncmp( receivedChars, "CFG", 3 ) )
-        {
-            strncpy( buffer, receivedChars, numChars );
-            setConfig(&buffer[3]);
-        }
-        else if ( 0 == strcmp( receivedChars, "GETCFG" ) )
-        {
-            transmitConfig();
+            blueSerial.println( "BOTOK" );
+            blueSerial.flush();
         }
         else
         {
             int counter = 0;
             int length = strlen( receivedChars );
+
             // this is a commands buffer
             // process commands: add them to the buffer (append the run command to the end of them and call checkBTData for each char)
-            for ( counter = 0; counter < length; counter++ )
+            
+            
+            // Calculate based on max input size expected for one command
+
+            // Read each command pair 
+            char* command = strtok( receivedChars, "&" );
+            while ( command != 0 )
             {
-                checkBTData( receivedChars[counter] );
+                // Split the command in two values
+                char* separator = strchr( command, ':' );
+                if ( separator != 0 )
+                {
+                    // Actually split the string in 2: replace ':' with 0
+                    *separator = 0;
+                    int cmdId = atoi( command );
+                    ++separator;
+                    int value = atoi( separator );
+
+                    checkBTData( cmdId, value );
+
+                }
+                // Find the next command in input string
+                command = strtok( 0, "&" );
             }
 
-            if ( strlen( moves ) > 0 )
+            if ( stepsCount > 0 )
             {
                 // Append run command
-                checkBTData( '5' );
+                checkBTData( '5', 0 );
             }
         }
 
@@ -385,75 +140,171 @@ void showNewData()
     }
 }
 
+void checkBTData( int command, int value )
+{
+    switch ( command )
+    {
+    case 'F':
+    case 'B':
+    case 'L':
+    case 'R':
+    case 'U':
+    case 'D':
+        addMove( command, value );
+        break;
+    case '5':
+        //start run
+        blueSerial.println( "GO" );
+        blueSerial.flush();
+        runMoves();
+        break;
+    default:
+        break;
+    }
+}
+
+void clearMoves()
+{
+    memset( moves, 0, sizeof( moves ) );
+    stepsCount = 0;
+}
+
+void addMove( int move, int value )
+{
+    if ( stepsCount < 56 )
+    {
+        moves[stepsCount].command = move;
+        moves[stepsCount].value = value;
+
+        stepsCount++;
+    }
+}
+
 /* MOTOR ROUTINES*/
-void motors_moveBW( int speedA, int speedB )
+void motors_moveFW( int value )
 {
-    digitalWrite( MOT_A_1_PIN, HIGH );
-    digitalWrite( MOT_A_2_PIN, LOW );
-    digitalWrite( MOT_B_1_PIN, HIGH );
-    digitalWrite( MOT_B_2_PIN, LOW );
+    int pulse = 0;
 
-    analogWrite( MOT_A_PWM_PIN, speedA );
-    analogWrite( MOT_B_PWM_PIN, speedB );
+    digitalWrite( MOT_A_1_PIN, LOW ); 
+    digitalWrite( MOT_B_1_PIN, HIGH ); 
+
+    for ( pulse = 0; pulse < value; pulse++ ) 
+    {
+        digitalWrite( MOT_A_PWM_PIN, HIGH ); //Trigger one step
+        digitalWrite( MOT_B_PWM_PIN, HIGH ); //Trigger one step
+        delay( 1 );
+        digitalWrite( MOT_A_PWM_PIN, LOW ); //Pull step pin low so it can be triggered again
+        digitalWrite( MOT_B_PWM_PIN, LOW ); //Pull step pin low so it can be triggered again
+        delay( ROBOT_SPEED_DELAY );
+    }
 }
 
-void motors_moveFW( int speedA, int speedB )
+void motors_moveBW( int value )
 {
-    digitalWrite( MOT_A_1_PIN, LOW );
-    digitalWrite( MOT_A_2_PIN, HIGH );
+    int pulse = 0;
+
     digitalWrite( MOT_B_1_PIN, LOW );
-    digitalWrite( MOT_B_2_PIN, HIGH );
-
-    analogWrite( MOT_A_PWM_PIN, speedA );
-    analogWrite( MOT_B_PWM_PIN, speedB );
-}
-
-void motors_rotateRT( int speedA, int speedB )
-{
-    digitalWrite( MOT_A_1_PIN, LOW );
-    digitalWrite( MOT_A_2_PIN, HIGH );
-    digitalWrite( MOT_B_1_PIN, HIGH );
-    digitalWrite( MOT_B_2_PIN, LOW );
-
-    analogWrite( MOT_A_PWM_PIN, speedA );
-    analogWrite( MOT_B_PWM_PIN, speedB );
-}
-
-void motors_rotateLF( int speedA, int speedB )
-{
     digitalWrite( MOT_A_1_PIN, HIGH );
-    digitalWrite( MOT_A_2_PIN, LOW );
-    digitalWrite( MOT_B_1_PIN, LOW );
-    digitalWrite( MOT_B_2_PIN, HIGH );
 
-    analogWrite( MOT_A_PWM_PIN, speedA );
-    analogWrite( MOT_B_PWM_PIN, speedB );
+    for ( pulse = 0; pulse < value; pulse++ )  //Loop the forward stepping enough times for motion to be visible
+    {
+        digitalWrite( MOT_A_PWM_PIN, HIGH ); //Trigger one step
+        digitalWrite( MOT_B_PWM_PIN, HIGH ); //Trigger one step
+        delay( 1 );
+        digitalWrite( MOT_A_PWM_PIN, LOW ); //Pull step pin low so it can be triggered again
+        digitalWrite( MOT_B_PWM_PIN, LOW ); //Pull step pin low so it can be triggered again
+        delay( ROBOT_SPEED_DELAY );
+    }
+}
+
+void motors_rotateRT( int value )
+{
+    int pulse = 0;
+
+    digitalWrite( MOT_A_1_PIN, LOW );
+    digitalWrite( MOT_B_1_PIN, LOW );
+
+    for ( pulse = 0; pulse < value; pulse++ )  //Loop the forward stepping enough times for motion to be visible
+    {
+        digitalWrite( MOT_A_PWM_PIN, HIGH ); //Trigger one step
+        digitalWrite( MOT_B_PWM_PIN, HIGH ); //Trigger one step
+        delay( 1 );
+        digitalWrite( MOT_A_PWM_PIN, LOW ); //Pull step pin low so it can be triggered again
+        digitalWrite( MOT_B_PWM_PIN, LOW ); //Pull step pin low so it can be triggered again
+        delay( ROBOT_SPEED_DELAY );
+    }
+}
+
+void motors_rotateLF( int value )
+{
+    int pulse = 0;
+
+    digitalWrite( MOT_A_1_PIN, HIGH );
+    digitalWrite( MOT_B_1_PIN, HIGH );
+
+    for ( pulse = 0; pulse < value; pulse++ )  //Loop the forward stepping enough times for motion to be visible
+    {
+        digitalWrite( MOT_A_PWM_PIN, HIGH ); //Trigger one step
+        digitalWrite( MOT_B_PWM_PIN, HIGH ); //Trigger one step
+        delay( 1 );
+        digitalWrite( MOT_A_PWM_PIN, LOW ); //Pull step pin low so it can be triggered again
+        digitalWrite( MOT_B_PWM_PIN, LOW ); //Pull step pin low so it can be triggered again
+        delay( ROBOT_SPEED_DELAY );
+    }
 }
 
 void motors_neutral()
 {
-    digitalWrite( MOT_A_1_PIN, LOW );
-    digitalWrite( MOT_A_2_PIN, LOW );
-    digitalWrite( MOT_B_1_PIN, LOW );
-    digitalWrite( MOT_B_2_PIN, LOW );
-
-    digitalWrite( MOT_A_PWM_PIN, HIGH );
-    digitalWrite( MOT_B_PWM_PIN, HIGH );
+    digitalWrite( MOT_A_PWM_PIN, LOW );
+    digitalWrite( MOT_B_PWM_PIN, LOW );
 }
 
-void setConfig(char* buff)
+void pen_up()
 {
-    configs.ticksPerRobot = atoi( buff );
-
-    EEPROM.put( 0, configs );
-    EEPROM.get( 0, configs );
-
-    Serial.println( "OKCFG" );
-    Serial.flush();
+    myservo.write( SRV_DW_ANGLE );     // tell servo to go to position SRV_DW_ANGLE
+    delay( 15 );                       // waits 15ms for the servo to reach the position
 }
 
-void transmitConfig()
+void pen_down()
 {
-    Serial.print("CFG");
-    Serial.print( configs.ticksPerRobot );
+    myservo.write( SRV_UP_ANGLE );     // tell servo to go to position SRV_UP_ANGLE
+    delay( 15 );
+}
+
+void runMoves()
+{
+    int currentStep = 0;
+
+    /* MOTOR CONTROL*/
+    for ( currentStep = 0; currentStep < stepsCount; currentStep++ )
+    {
+        switch ( moves[currentStep].command )
+        {
+            case 'F': 
+                motors_moveFW( moves[currentStep].value * STEPS_CM );
+                break;
+            case 'B': 
+                motors_moveBW( moves[currentStep].value * STEPS_CM );
+                break;
+            case 'R': 
+                motors_rotateRT( moves[currentStep].value * STEPS_DEG );
+                break;
+            case 'L': 
+                motors_rotateLF( moves[currentStep].value * STEPS_DEG );
+                break;
+            case 'U':
+                pen_up();
+                break;
+            case 'D':
+                pen_down();
+                break;
+            default:
+                break;
+        }                
+    }
+
+    clearMoves();
+
+    blueSerial.println( "DONE" );
+    blueSerial.flush();
 }
