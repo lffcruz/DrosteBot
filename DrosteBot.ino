@@ -22,12 +22,15 @@ const byte numChars = 350;
 char receivedChars[numChars];
 boolean newData = false;
 
-SoftwareSerial blueSerial( BT_RX_PIN, BT_TX_PIN );
+SoftwareSerial blueSerial( BT_TX_PIN, BT_RX_PIN);
 
 void setup()
 {    
     // Bluetooth speed
-    blueSerial.begin( 38400 );
+    blueSerial.begin( 9600 );
+
+    // Debug info
+    Serial.begin( 9600 );           // set up Serial library at 9600 bps
 
     // Set motors' pins
     pinMode( MOT_A_1_PIN, OUTPUT );
@@ -60,6 +63,7 @@ void recvWithStartEndMarkers()
     char rc;
 
     while ( blueSerial.available() > 0 && newData == false ) {
+
         rc = blueSerial.read();
 
         if ( recvInProgress == true )
@@ -92,6 +96,10 @@ void showNewData()
 {
     if ( newData == true )
     {
+
+        Serial.print( "showNewData() data string: " ); 
+        Serial.println( receivedChars );
+
         if ( 0 == strcmp( receivedChars, "BOT" ) )
         {
             blueSerial.println( "BOTOK" );
@@ -99,32 +107,19 @@ void showNewData()
         }
         else
         {
-            int counter = 0;
-            int length = strlen( receivedChars );
-
-            // this is a commands buffer
-            // process commands: add them to the buffer (append the run command to the end of them and call checkBTData for each char)
-            
-            
-            // Calculate based on max input size expected for one command
-
             // Read each command pair 
             char* command = strtok( receivedChars, "&" );
             while ( command != 0 )
             {
-                // Split the command in two values
-                char* separator = strchr( command, ':' );
-                if ( separator != 0 )
-                {
-                    // Actually split the string in 2: replace ':' with 0
-                    *separator = 0;
-                    int cmdId = atoi( command );
-                    ++separator;
-                    int value = atoi( separator );
+                String cmd( command );
 
-                    checkBTData( cmdId, value );
-
-                }
+                int sepIndex = cmd.indexOf( ':' );
+                
+                int firstValue = (int)(cmd.substring( 0, sepIndex ).charAt(0));
+                int secondValue = cmd.substring( sepIndex + 1 ).toInt();
+                
+                checkBTData( firstValue, secondValue );
+                
                 // Find the next command in input string
                 command = strtok( 0, "&" );
             }
@@ -195,7 +190,7 @@ void motors_moveFW( int value )
         delay( 1 );
         digitalWrite( MOT_A_PWM_PIN, LOW ); //Pull step pin low so it can be triggered again
         digitalWrite( MOT_B_PWM_PIN, LOW ); //Pull step pin low so it can be triggered again
-        delay( ROBOT_SPEED_DELAY );
+        delay( 1 );
     }
 }
 
@@ -213,7 +208,7 @@ void motors_moveBW( int value )
         delay( 1 );
         digitalWrite( MOT_A_PWM_PIN, LOW ); //Pull step pin low so it can be triggered again
         digitalWrite( MOT_B_PWM_PIN, LOW ); //Pull step pin low so it can be triggered again
-        delay( ROBOT_SPEED_DELAY );
+        delay( 1 );
     }
 }
 
@@ -231,7 +226,7 @@ void motors_rotateRT( int value )
         delay( 1 );
         digitalWrite( MOT_A_PWM_PIN, LOW ); //Pull step pin low so it can be triggered again
         digitalWrite( MOT_B_PWM_PIN, LOW ); //Pull step pin low so it can be triggered again
-        delay( ROBOT_SPEED_DELAY );
+        delay( 1 );
     }
 }
 
@@ -249,7 +244,7 @@ void motors_rotateLF( int value )
         delay( 1 );
         digitalWrite( MOT_A_PWM_PIN, LOW ); //Pull step pin low so it can be triggered again
         digitalWrite( MOT_B_PWM_PIN, LOW ); //Pull step pin low so it can be triggered again
-        delay( ROBOT_SPEED_DELAY );
+        delay( 1 );
     }
 }
 
