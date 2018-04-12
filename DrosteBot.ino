@@ -18,7 +18,7 @@ byte stepsCount = 0;
 cmdPair moves[56];
 
 // serial data status
-const byte numChars = 350;
+const int numChars = 350;
 char receivedChars[numChars];
 boolean newData = false;
 
@@ -172,6 +172,10 @@ void addMove( int move, int value )
         moves[stepsCount].value = value;
 
         stepsCount++;
+    }
+    else
+    {
+        Serial.print( "addMove(): Discarded! Buffer is full!!! " );
     }
 }
 
