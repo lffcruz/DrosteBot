@@ -13,7 +13,7 @@
 #define MOT_B_PWM_PIN 6
 
 #define SRV_PIN 9
-#define SRV_UP_ANGLE 45
+#define SRV_UP_ANGLE 35
 #define SRV_DW_ANGLE 0
 
 #define BT_TX_PIN 3

@@ -40,6 +40,8 @@ void setup()
     pinMode( MOT_B_PWM_PIN, OUTPUT );
 
     myservo.attach( SRV_PIN );
+	myservo.write( SRV_DW_ANGLE );
+	delay( 15 );
 
     memset(moves, 0, sizeof(moves));
 }
@@ -191,10 +193,10 @@ void motors_moveFW( int value )
     {
         digitalWrite( MOT_A_PWM_PIN, HIGH ); //Trigger one step
         digitalWrite( MOT_B_PWM_PIN, HIGH ); //Trigger one step
-        delay( 1 );
+        
         digitalWrite( MOT_A_PWM_PIN, LOW ); //Pull step pin low so it can be triggered again
         digitalWrite( MOT_B_PWM_PIN, LOW ); //Pull step pin low so it can be triggered again
-        delay( 1 );
+		delayMicroseconds( 900 );
     }
 }
 
@@ -209,10 +211,10 @@ void motors_moveBW( int value )
     {
         digitalWrite( MOT_A_PWM_PIN, HIGH ); //Trigger one step
         digitalWrite( MOT_B_PWM_PIN, HIGH ); //Trigger one step
-        delay( 1 );
+        
         digitalWrite( MOT_A_PWM_PIN, LOW ); //Pull step pin low so it can be triggered again
         digitalWrite( MOT_B_PWM_PIN, LOW ); //Pull step pin low so it can be triggered again
-        delay( 1 );
+		delayMicroseconds( 900 );
     }
 }
 
@@ -227,10 +229,10 @@ void motors_rotateRT( int value )
     {
         digitalWrite( MOT_A_PWM_PIN, HIGH ); //Trigger one step
         digitalWrite( MOT_B_PWM_PIN, HIGH ); //Trigger one step
-        delay( 1 );
+        
         digitalWrite( MOT_A_PWM_PIN, LOW ); //Pull step pin low so it can be triggered again
         digitalWrite( MOT_B_PWM_PIN, LOW ); //Pull step pin low so it can be triggered again
-        delay( 1 );
+		delayMicroseconds( 900 );
     }
 }
 
@@ -245,10 +247,10 @@ void motors_rotateLF( int value )
     {
         digitalWrite( MOT_A_PWM_PIN, HIGH ); //Trigger one step
         digitalWrite( MOT_B_PWM_PIN, HIGH ); //Trigger one step
-        delay( 1 );
+        
         digitalWrite( MOT_A_PWM_PIN, LOW ); //Pull step pin low so it can be triggered again
         digitalWrite( MOT_B_PWM_PIN, LOW ); //Pull step pin low so it can be triggered again
-        delay( 1 );
+		delayMicroseconds( 900 );
     }
 }
 
@@ -260,14 +262,14 @@ void motors_neutral()
 
 void pen_up()
 {
-    myservo.write( SRV_DW_ANGLE );     // tell servo to go to position SRV_DW_ANGLE
-    delay( 15 );                       // waits 15ms for the servo to reach the position
+    myservo.write( SRV_UP_ANGLE );     // tell servo to go to position SRV_UP_ANGLE
+    delay( 500 );                       // waits 15ms for the servo to reach the position
 }
 
 void pen_down()
 {
-    myservo.write( SRV_UP_ANGLE );     // tell servo to go to position SRV_UP_ANGLE
-    delay( 15 );
+    myservo.write( SRV_DW_ANGLE );     // tell servo to go to position SRV_DW_ANGLE
+    delay( 500 );
 }
 
 void runMoves()
